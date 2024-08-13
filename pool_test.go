@@ -1,157 +1,110 @@
-package pool
+package pool_test
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
+	"math/rand/v2"
+	"slices"
 	"testing"
+	"time"
+
+	"github.com/DarkCeptor44/pool"
 )
 
-const testFolder = "temp"
+var vals = randSlice(10000, 100000)
 
-func TestAction(t *testing.T) {
-	arr := []string{}
-	for i := 0; i < 5; i++ {
-		arr = append(arr, fmt.Sprintf("file%d.txt", i+1))
-	}
-
-	p := NewPool(10, arr)
-	err := p.Run(func(worker Worker, value string) error {
-		t.Logf("Manipulating file %s by %s\n", value, worker.Name())
-		return nil
+func TestNormal(t *testing.T) {
+	wrapTest(t, "Normal", func(i []int, f func(int)) {
+		for _, v := range i {
+			f(v)
+		}
 	})
-	if err != nil {
-		t.Error(err)
-	}
 }
 
-func TestReturn(t *testing.T) {
-	arr := []string{}
-	for i := 0; i < 5; i++ {
-		arr = append(arr, fmt.Sprintf("file%d.txt", i+1))
-	}
-
-	p := NewReturnPool[string, bool](10, arr)
-	res, err := p.Run(func(worker Worker, value string) (bool, error) {
-		return strings.Contains(value, fmt.Sprint(worker)), nil
+func TestPool(t *testing.T) {
+	t.Run("NoValues", func(t *testing.T) {
+		err := pool.Run(10, []int{}, func(i int, v int) {
+			t.Log(i, v)
+		})
+		if err == nil {
+			t.Fatal("expected an error")
+		}
 	})
-	if err != nil {
-		t.Error(err)
-	}
-	t.Logf("%v\n", res)
-}
 
-func BenchmarkStd(b *testing.B) {
-	b.Run("Read", wrapperForFiles(func(arr []string) {
-		for _, file := range arr {
-			f, err := os.Open(file)
-			handleError(b, err)
-			defer f.Close()
-
-			var bb []byte
-			_, err = f.Read(bb)
-			handleError(b, err)
-		}
-	}))
-
-	b.Run("Write", wrapperForFiles(func(arr []string) {
-		for _, file := range arr {
-			f, err := os.OpenFile(file, os.O_WRONLY, os.ModePerm)
-			handleError(b, err)
-			defer f.Close()
-
-			_, err = f.WriteString("hi there")
-			handleError(b, err)
-		}
-	}))
-}
-
-func BenchmarkAction(b *testing.B) {
-	b.Run("Read", wrapperForFiles(func(arr []string) {
-		p := NewPool(10, arr)
-		err := p.Run(func(worker Worker, value string) error {
-			f, err := os.Open(value)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-
-			var bb []byte
-			_, err = f.Read(bb)
-			return err
+	wrapTest(t, "Pool", func(i []int, f func(int)) {
+		pool.Run(10, i, func(_, v int) {
+			f(v)
 		})
-		handleError(b, err)
-	}))
-
-	b.Run("Write", wrapperForFiles(func(arr []string) {
-		p := NewPool(10, arr)
-		err := p.Run(func(worker Worker, value string) error {
-			f, err := os.OpenFile(value, os.O_WRONLY, os.ModePerm)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-
-			_, err = f.WriteString("hi there")
-			return err
-		})
-		handleError(b, err)
-	}))
+	})
 }
 
-func BenchmarkReturn(b *testing.B) {
-	b.Run("Read", wrapperForFiles(func(arr []string) {
-		p := NewReturnPool[string, int](10, arr)
-		res, err := p.Run(func(worker Worker, value string) (int, error) {
-			f, err := os.Open(value)
-			if err != nil {
-				return 0, nil
-			}
-			defer f.Close()
-
-			var bb []byte
-			n, err := f.Read(bb)
-			return n, err
+func TestPoolWithReturn(t *testing.T) {
+	t.Run("NoValues", func(t *testing.T) {
+		_, err := pool.RunAndReturn(10, []int{}, func(i int, v int) int {
+			return v * v
 		})
-		handleError(b, err)
-		if len(res) == 0 {
-			b.Log("no results")
-			b.FailNow()
+		if err == nil {
+			t.Fatal("expected an error")
 		}
-	}))
+	})
+
+	// TODO implement return test
 }
 
-func wrapperForFiles(a func(arr []string)) func(b *testing.B) {
-	return func(b *testing.B) {
-		arr := make([]string, 0)
-		os.Mkdir(testFolder, os.ModePerm)
-
-		for i := 0; i < 10; i++ {
-			name := fmt.Sprintf("file%d.txt", i+1)
-			path := filepath.Join(testFolder, name)
-			f, err := os.Create(path)
-			handleError(b, err)
-			err = f.Truncate(1024 * 1024)
-			handleError(b, err)
-			f.Close()
-			arr = append(arr, path)
+func BenchmarkNormal(b *testing.B) {
+	wrap(b, func(i []int, f func(int)) {
+		for _, v := range i {
+			f(v)
 		}
+	})
+}
 
-		for i := 0; i < b.N; i++ {
-			a(arr)
-		}
+func BenchmarkPool(b *testing.B) {
+	wrap(b, func(i []int, f func(int)) {
+		pool.Run(10, i, func(_, v int) {
+			f(v)
+		})
+	})
+}
 
-		for _, file := range arr {
-			err := os.Remove(file)
-			handleError(b, err)
-		}
+func wrap(b *testing.B, f func([]int, func(int))) {
+	vals := []int{3, 2, 1, 5, 6, 7, 8, 9, 10, 32}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		f(vals, func(v int) {
+			if !slices.Contains(vals, v) {
+				b.Fatal("unexpected value")
+			}
+		})
 	}
 }
 
-func handleError(b *testing.B, err error) {
-	if err != nil {
-		b.Log(err)
-		b.FailNow()
+func wrapTest(t *testing.T, name string, f func([]int, func(int))) {
+	num := 5
+
+	t.Run(name, func(t *testing.T) {
+		var sum time.Duration
+
+		for i := 0; i < num; i++ {
+			start := time.Now()
+			f(vals, func(v int) {
+				if !slices.Contains(vals, v) {
+					t.Fatal("unexpected value")
+				}
+			})
+			sum += time.Since(start)
+		}
+
+		average := sum / time.Duration(num)
+		t.Logf("'%s' Took %s\n", name, average)
+	})
+}
+
+func randSlice(m, n int) []int {
+	vals := make([]int, n)
+	for i := 0; i < n; i++ {
+		vals[i] = rand.IntN(m)
 	}
+	return vals
 }

@@ -1,157 +1,99 @@
 package pool
 
 import (
-	"fmt"
+	"errors"
 	"sync"
 )
 
-// Pool represents a pool instance
-type Pool[K any] struct {
-	NumWorkers int
-	workers    []Worker
-	data       []K
-}
+var (
+	bufferSize        int = 10
+	defaultNumWorkers int = 10
+)
 
-type ReturnPool[K any, V any] struct {
-	NumWorkers int
-	workers    []Worker
-	data       []K
-}
-
-type Worker int
-
-func (w Worker) Name() string {
-	return fmt.Sprintf("worker%d", w+1)
-}
-
-// ActionTask represents a function that is executed by each worker but doesnt return anything.
-// worker represents the number of the worker in the pool, starting from 1
-type ActionTask[K any] func(worker Worker, value K) error
-
-type ReturnTask[K any, V any] func(worker Worker, value K) (V, error)
-
-// NewPool creates a new Pool where K is the type given to the workers.
-// If number of workers is 0, 10 will be used
-func NewPool[K any](numWorkers int, data []K) *Pool[K] {
-	return &Pool[K]{
-		NumWorkers: IfThenElse(numWorkers <= 0, 10, numWorkers),
-		workers:    makeWorkers(numWorkers),
-		data:       data,
+// Run executes the task on a pool of workers of length numWorkers with the values
+func Run[K any](numWorkers int, values []K, job func(index int, value K)) error {
+	if numWorkers <= 0 {
+		numWorkers = defaultNumWorkers
 	}
-}
 
-// NewReturnPool creates a new Pool where K is the type given to the workers and V is the type returned from the workers.
-// If number of workers is 0, 10 will be used
-func NewReturnPool[K any, V any](numWorkers int, data []K) *ReturnPool[K, V] {
-	return &ReturnPool[K, V]{
-		NumWorkers: IfThenElse(numWorkers <= 0, 10, numWorkers),
-		workers:    makeWorkers(numWorkers),
-		data:       data,
+	if len(values) == 0 {
+		return errors.New("no values provided")
 	}
-}
 
-// Executes the task on the pool
-func (p *Pool[K]) Run(task ActionTask[K]) error {
 	var wg sync.WaitGroup
-	values := make(chan K)
-	errors := make(chan error)
-	num := min(p.NumWorkers, len(p.data))
+	data := make(chan K, bufferSize)
 
-	for i := 0; i < num; i++ {
+	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go func(workerIndex int) {
-			defer wg.Done()
-			for value := range values {
-				worker := p.workers[workerIndex]
-				err := task(worker, value)
-				if err != nil {
-					errors <- err
-				}
-			}
-		}(i)
+		go worker(i, data, job, &wg)
 	}
 
-	for _, value := range p.data {
-		values <- value
+	for _, val := range values {
+		data <- val
 	}
 
-	go func() {
-		close(values)
-		wg.Wait()
-		close(errors)
-	}()
-
-	for err := range errors {
-		if err != nil {
-			return err
-		}
-	}
+	close(data)
+	wg.Wait()
 
 	return nil
 }
 
-// Executes the task on the pool
-func (p *ReturnPool[K, V]) Run(task ReturnTask[K, V]) ([]V, error) {
+// RunAndReturn executes the task on a pool of workers of length numWorkers with the values
+// and returns the results.
+// Keep in mind the results slice might not be in the same order
+func RunAndReturn[K any, V any](numWorkers int, values []K, job func(index int, value K) V) ([]V, error) {
+	if numWorkers <= 0 {
+		numWorkers = defaultNumWorkers
+	}
+
+	if len(values) == 0 {
+		return nil, errors.New("no values provided")
+	}
+
 	var wg sync.WaitGroup
-	values := make(chan K)
-	errors := make(chan error)
-	results := make(chan V)
-	num := min(p.NumWorkers, len(p.data))
+	data := make(chan K, bufferSize)
+	ret := make(chan V, bufferSize)
 
-	for i := 0; i < num; i++ {
+	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go func(workerIndex int) {
-			defer wg.Done()
-			for value := range values {
-				worker := p.workers[workerIndex]
-				r, err := task(worker, value)
-				if err != nil {
-					errors <- err
-				}
-				results <- r
-			}
-		}(i)
+		go workerWithReturn(i, data, ret, job, &wg)
 	}
 
-	for _, value := range p.data {
-		values <- value
+	for _, val := range values {
+		data <- val
 	}
 
-	go func() {
-		close(values)
-		wg.Wait()
-		close(errors)
-		close(results)
-	}()
+	close(data)
+	close(ret)
+	wg.Wait()
 
-	res := make([]V, 0)
-	for r := range results {
-		res = append(res, r)
+	results := make([]V, len(values))
+	for r := range ret {
+		results = append(results, r)
 	}
 
-	for err := range errors {
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	return res, nil
+	return results, nil
 }
 
-func makeWorkers(n int) []Worker {
-	workers := make([]Worker, 0)
-	for i := 0; i < n; i++ {
-		workers = append(workers, Worker(i))
+// Sets the channels buffer size, default is 10
+func SetBufferSize(size int) {
+	if size < 0 {
+		return
 	}
-	return workers
+
+	bufferSize = size
 }
 
-// Returns a if condition is true, b otherwise.
-// Adapted from https://github.com/shomali11/util/blob/master/xconditions/xconditions.go#L12.
-// Wanted something that uses generics
-func IfThenElse[K any](condition bool, a, b K) K {
-	if condition {
-		return a
+func worker[K any](index int, values <-chan K, job func(index int, value K), wg *sync.WaitGroup) {
+	defer wg.Done()
+	for val := range values {
+		job(index, val)
 	}
-	return b
+}
+
+func workerWithReturn[K any, V any](index int, values <-chan K, results chan<- V, job func(index int, value K) V, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for val := range values {
+		results <- job(index, val)
+	}
 }
