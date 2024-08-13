@@ -1,13 +1,15 @@
 package pool_test
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"slices"
 	"testing"
 	"time"
 
 	"github.com/DarkCeptor44/pool"
 )
+
+var vals = randSlice(10000, 100000)
 
 func TestNormal(t *testing.T) {
 	wrapTest(t, "Normal", func(i []int, f func(int)) {
@@ -83,7 +85,6 @@ func wrapTest(t *testing.T, name string, f func([]int, func(int))) {
 		var sum time.Duration
 
 		for i := 0; i < num; i++ {
-			vals := randSlice(10000, 100000)
 			start := time.Now()
 			f(vals, func(v int) {
 				if !slices.Contains(vals, v) {
@@ -101,7 +102,7 @@ func wrapTest(t *testing.T, name string, f func([]int, func(int))) {
 func randSlice(m, n int) []int {
 	vals := make([]int, n)
 	for i := 0; i < n; i++ {
-		vals[i] = rand.Intn(m)
+		vals[i] = rand.IntN(m)
 	}
 	return vals
 }
