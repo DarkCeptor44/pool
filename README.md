@@ -8,7 +8,7 @@ This project started out as _"a Pure Go equivalent-ish of Python's `multiprocess
 ## Installation
 
 ```bash
-go get -u github.com/DarkCeptor44/pool
+go get -u github.com/DarkCeptor44/pool/v2
 ```
 
 ## Example
@@ -19,7 +19,7 @@ go get -u github.com/DarkCeptor44/pool
 import (
     "fmt"
 
-    "github.com/DarkCeptor44/pool"
+    "github.com/DarkCeptor44/pool/v2"
 )
 
 func job(index, value int) {
@@ -40,7 +40,7 @@ func main(){
 import (
     "fmt"
 
-    "github.com/DarkCeptor44/pool"
+    "github.com/DarkCeptor44/pool/v2"
 )
 
 func multiply(_, value int) int {
@@ -76,7 +76,7 @@ $ go test -v
 --- PASS: TestPoolWithReturn (0.00s)
     --- PASS: TestPoolWithReturn/NoValues (0.00s)
 PASS
-ok      github.com/DarkCeptor44/pool    1.448s
+ok      github.com/DarkCeptor44/pool/v2 1.448s
 ```
 
 ## Benchmarks
@@ -85,12 +85,12 @@ ok      github.com/DarkCeptor44/pool    1.448s
 $ go test -bench .
 goos: windows
 goarch: amd64
-pkg: github.com/DarkCeptor44/pool
+pkg: github.com/DarkCeptor44/pool/v2
 cpu: AMD Ryzen 7 3800X 8-Core Processor
 BenchmarkNormal-16      13556533                83.97 ns/op           48 B/op          1 allocs/op
 BenchmarkPool-16          168236              7033 ns/op             738 B/op         14 allocs/op
 PASS
-ok      github.com/DarkCeptor44/pool    3.894s
+ok      github.com/DarkCeptor44/pool/v2 4.209s
 ```
 
 ## Vulnerabilities

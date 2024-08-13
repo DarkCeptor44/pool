@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DarkCeptor44/pool"
+	"github.com/DarkCeptor44/pool/v2"
 )
 
 var vals = randSlice(10000, 100000)
