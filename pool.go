@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	BufferSize        int = 10
+	bufferSize        int = 10
 	defaultNumWorkers int = 10
 )
 
@@ -21,7 +21,7 @@ func Run[K any](numWorkers int, values []K, job func(index int, value K)) error 
 	}
 
 	var wg sync.WaitGroup
-	data := make(chan K, BufferSize)
+	data := make(chan K, bufferSize)
 
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
@@ -39,7 +39,8 @@ func Run[K any](numWorkers int, values []K, job func(index int, value K)) error 
 }
 
 // RunAndReturn executes the task on a pool of workers of length numWorkers with the values
-// and returns the results
+// and returns the results.
+// Keep in mind the results slice might not be in the same order
 func RunAndReturn[K any, V any](numWorkers int, values []K, job func(index int, value K) V) ([]V, error) {
 	if numWorkers <= 0 {
 		numWorkers = defaultNumWorkers
@@ -50,8 +51,8 @@ func RunAndReturn[K any, V any](numWorkers int, values []K, job func(index int, 
 	}
 
 	var wg sync.WaitGroup
-	data := make(chan K, BufferSize)
-	ret := make(chan V, BufferSize)
+	data := make(chan K, bufferSize)
+	ret := make(chan V, bufferSize)
 
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
@@ -72,6 +73,15 @@ func RunAndReturn[K any, V any](numWorkers int, values []K, job func(index int, 
 	}
 
 	return results, nil
+}
+
+// Sets the channels buffer size, default is 10
+func SetBufferSize(size int) {
+	if size < 0 {
+		return
+	}
+
+	bufferSize = size
 }
 
 func worker[K any](index int, values <-chan K, job func(index int, value K), wg *sync.WaitGroup) {
