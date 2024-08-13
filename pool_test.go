@@ -45,6 +45,8 @@ func TestPoolWithReturn(t *testing.T) {
 			t.Fatal("expected an error")
 		}
 	})
+
+	// TODO implement return test
 }
 
 func BenchmarkNormal(b *testing.B) {
